@@ -53,37 +53,49 @@ def align(channel, blue):
                 max_response = response
                 max_row, max_col = row, col
 
-    print(max_row, max_col, max_response)
-    return shift(channel, max_row, max_col)
+    print(max_row, max_col)
+    return max_row, max_col
 
 # name of the input file
-imname = 'images/cathedral.jpg'
+imname = 'images/church.tif'
 # read in the image
-im = sktransform.rescale(skio.imread(imname), 1)
+im = skio.imread(imname)
+scaled = sktransform.rescale(im, 0.1)
+
 
 # convert to double (might want to do this later on to save memory)
 im = sk.img_as_float(im)
+scaled = sk.img_as_float(scaled)
 
-# compute the height of each part (just 1/3 of total)
-height = int(np.floor(im.shape[0] / 3.0))
-# separate color channels
-b = im[:height][20:-20, 20:-20]
-g = im[height: 2*height][20:-20, 20:-20]
-r = im[2*height: 3*height][20:-20, 20:-20]
+
+def layers(composite):
+    # compute the height of each part (just 1/3 of total)
+    height = int(np.floor(composite.shape[0] / 3.0))
+    # separate color channels
+    b = composite[:height][20:-20, 20:-20]
+    g = composite[height: 2*height][20:-20, 20:-20]
+    r = composite[2*height: 3*height][20:-20, 20:-20]
+
+    return r, g, b
 
 # align the images
 # functions that might be useful for aligning the images include:
 # np.roll, np.sum, sk.transform.rescale (for multiscale)
 
-ar = align(r, b)
-ag = align(g, b)
+r, g, b = layers(scaled)
+rr, rc = align(r, b)
+gr, gc = align(g, b)
+
+r, g, b = layers(im)
+ar = shift(r, 10 * rr, 10 * rc)
+ag = shift(g, 10 * gr, 10 * gc)
 # create a color image
 im_out = np.dstack([r, g, b])
 im_out_aligned = np.dstack([ar, ag, b])
 
 # save the image
-fname = '/out_path/out_fname.jpg'
-#skio.imsave(fname, im_out)
+skio.imsave('./out/original.jpg', im_out)
+skio.imsave('./out/aligned.jpg', im_out_aligned)
 
 # display the image
 #skio.imshow(im_out)
