@@ -8,6 +8,7 @@ import skimage as sk
 import skimage.io as skio
 import skimage.measure as skmeasure
 import skimage.transform as sktransform
+from skimage import filters
 
 
 OFFSET = 15
@@ -16,8 +17,8 @@ def normalize(channel):
     return shifted / np.linalg.norm(shifted)
 
 def similarity(channel, blue):
-    channel = channel[30:-30, 30:-30].ravel()
-    blue = blue[30:-30, 30:-30].ravel()
+    channel = channel.ravel()
+    blue = blue.ravel()
     norm_channel = normalize(channel)
     norm_blue = normalize(blue)
 
@@ -43,11 +44,13 @@ def shift(channel, rows, cols):
 
     return padded
 
-def align(channel, blue):
+def align(channel, blue, offset, row_start=0, col_start=0):
     max_row, max_col = 0, 0
     max_response = float("inf")
-    for row in range(-OFFSET, OFFSET):
-        for col in range(-OFFSET, OFFSET):
+    for r in range(-offset, offset):
+        for c in range(-offset, offset):
+            row = r + row_start
+            col = c + col_start
             response = similarity(shift(channel, row, col), blue)
             if response < max_response:
                 max_response = response
@@ -56,48 +59,56 @@ def align(channel, blue):
     print(max_row, max_col)
     return max_row, max_col
 
-# name of the input file
-imname = 'images/church.tif'
-# read in the image
-im = skio.imread(imname)
-scaled = sktransform.rescale(im, 0.1)
-
-
-# convert to double (might want to do this later on to save memory)
-im = sk.img_as_float(im)
-scaled = sk.img_as_float(scaled)
-
-
 def layers(composite):
     # compute the height of each part (just 1/3 of total)
     height = int(np.floor(composite.shape[0] / 3.0))
     # separate color channels
-    b = composite[:height][20:-20, 20:-20]
-    g = composite[height: 2*height][20:-20, 20:-20]
-    r = composite[2*height: 3*height][20:-20, 20:-20]
+    b = composite[:height][30:-30, 30:-30]
+    g = composite[height: 2*height][30:-30, 30:-30]
+    r = composite[2*height: 3*height][30:-30, 30:-30]
 
     return r, g, b
 
-# align the images
-# functions that might be useful for aligning the images include:
-# np.roll, np.sum, sk.transform.rescale (for multiscale)
+def process(composite, original):
+    offset = OFFSET
+    red_row, red_col, green_row, green_col = 0, 0, 0, 0
+    scale = 8
+    scaled = sktransform.rescale(composite, 1.0 / scale)
+    scaled = sk.img_as_float(scaled)
+    r, g, b = layers(scaled)
+    while scale > 1:
+        red_row, red_col = align(r, b, offset, red_row, red_col)
+        green_row, green_col = align(g, b, offset, green_row, green_col)
 
-r, g, b = layers(scaled)
-rr, rc = align(r, b)
-gr, gc = align(g, b)
+        print("Aligned R=({}, {}) G=({}, {}) at scale={}.".format(scale * red_row,
+            scale * red_col, scale * green_row, scale * green_col, scale))
+        red_row *= 2
+        red_col *= 2
+        green_row *= 2
+        green_col *= 2
+        scale = int(scale / 2)
+        scaled = sktransform.rescale(composite, 1.0 / scale)
+        scaled = sk.img_as_float(scaled)
+        r, g, b = layers(scaled)
+        offset = 7
 
-r, g, b = layers(im)
-ar = shift(r, 10 * rr, 10 * rc)
-ag = shift(g, 10 * gr, 10 * gc)
-# create a color image
-im_out = np.dstack([r, g, b])
-im_out_aligned = np.dstack([ar, ag, b])
+    R, G, B = layers(original)
+    ar = shift(R, red_row * scale, red_col * scale)
+    ag = shift(G, green_row * scale, green_col * scale)
+    return np.dstack([ar, ag, B])
+
+
+# name of the input file
+imname = 'images/emir.tif'
+im = skio.imread(imname)
+im = sk.img_as_float(im)
+sobel = filters.sobel(im)
+aligned = process(sobel, im)
 
 # save the image
-skio.imsave('./out/original.jpg', im_out)
-skio.imsave('./out/aligned.jpg', im_out_aligned)
-
+#skio.imsave('./out/original.jpg', im_out)
+skio.imsave('./out/aligned.jpg', aligned)
 # display the image
 #skio.imshow(im_out)
-skio.imshow(im_out_aligned)
-skio.show()
+#skio.imshow(im_out_aligned)
+#skio.show()
